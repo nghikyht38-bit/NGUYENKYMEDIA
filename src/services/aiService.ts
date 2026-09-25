@@ -13,12 +13,24 @@ function getRequestHeaders(): Record<string, string> {
   return headers;
 }
 
+// Detect if the app is hosted on static pages (e.g. GitHub Pages) where /api doesn't exist
+const isStaticHosting =
+  typeof window !== 'undefined' &&
+  (window.location.hostname.endsWith('github.io') ||
+    window.location.hostname.endsWith('pages.dev') ||
+    window.location.protocol === 'file:');
+
 export async function analyzeScript(
   idea: string,
   config: StudioConfig,
   referenceImages: ReferenceImage[] = [],
   characterSeed?: string
 ): Promise<ScriptAnalysisResult> {
+  // If running on GitHub Pages, directly use client-side generator to avoid failed network requests
+  if (isStaticHosting) {
+    return await analyzeScriptClientSide(idea, config, characterSeed);
+  }
+
   const payload = {
     idea,
     sceneCount: config.sceneCount,
@@ -44,24 +56,14 @@ export async function analyzeScript(
       body: JSON.stringify(payload),
     });
 
-    if (response.status === 404) {
-      // Running on static hosting like GitHub Pages without Express backend
+    if (response.status === 404 || !response.ok) {
       return await analyzeScriptClientSide(idea, config, characterSeed);
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `Lỗi phân tích kịch bản (${response.status})`);
     }
 
     const data = await response.json();
     return formatAnalysisResult(data, config);
-  } catch (err: any) {
-    // If network error (backend not running, e.g. GitHub Pages)
-    if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError') || err.message?.includes('404')) {
-      return await analyzeScriptClientSide(idea, config, characterSeed);
-    }
-    throw err;
+  } catch (_err: any) {
+    return await analyzeScriptClientSide(idea, config, characterSeed);
   }
 }
 
@@ -178,6 +180,16 @@ export async function generateSceneImage(
   referenceImage?: ReferenceImage | null,
   characterConsistency?: string
 ): Promise<string> {
+  if (isStaticHosting) {
+    return createStyledPlaceholderImage(
+      prompt,
+      prompt,
+      'Điện Ảnh',
+      characterConsistency || 'Nhân vật chính',
+      aspectRatio
+    );
+  }
+
   const payload: any = {
     prompt,
     aspectRatio,
@@ -198,7 +210,7 @@ export async function generateSceneImage(
       body: JSON.stringify(payload),
     });
 
-    if (response.status === 404) {
+    if (response.status === 404 || !response.ok) {
       return createStyledPlaceholderImage(
         prompt,
         prompt,
@@ -208,15 +220,15 @@ export async function generateSceneImage(
       );
     }
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || 'Lỗi khi tạo ảnh qua API');
-    }
-
     const data = await response.json();
-    return data.imageUrl;
-  } catch (err: any) {
-    // Graceful fallback for static deployment (GitHub Pages) or offline
+    return data.imageUrl || createStyledPlaceholderImage(
+      prompt,
+      prompt,
+      'Điện Ảnh',
+      characterConsistency || 'Nhân vật chính',
+      aspectRatio
+    );
+  } catch (_err: any) {
     return createStyledPlaceholderImage(
       prompt,
       prompt,
