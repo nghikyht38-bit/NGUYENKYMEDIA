@@ -422,16 +422,27 @@ export default function App() {
     );
 
     try {
-      // 1. Ensure image is available
+      // 1. Ensure image is available (Generate real AI image if missing)
       let imgUrl = scene.imageUrl;
       if (!imgUrl) {
-        imgUrl = createStyledPlaceholderImage(
-          scene.title,
-          scene.imagePromptVi || scene.imagePrompt,
-          config.style,
-          characterProfile.name,
-          config.aspectRatio
-        );
+        try {
+          const refImg = referenceImages.length > 0 ? referenceImages[0] : null;
+          imgUrl = await generateSceneImage(
+            scene.imagePrompt,
+            config.aspectRatio,
+            refImg,
+            characterProfile.consistencyTokens
+          );
+        } catch (_) {
+          imgUrl = createStyledPlaceholderImage(
+            scene.title,
+            scene.imagePromptVi || scene.imagePrompt,
+            config.style,
+            characterProfile.name,
+            config.aspectRatio
+          );
+        }
+
         setScenes((prev) =>
           prev.map((s) => (s.id === scene.id ? { ...s, imageUrl: imgUrl, imageStatus: 'ready' } : s))
         );

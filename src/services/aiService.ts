@@ -180,14 +180,97 @@ export async function generateSceneImage(
   referenceImage?: ReferenceImage | null,
   characterConsistency?: string
 ): Promise<string> {
+  const activeKey = getActiveApiKey();
+
+  // 1. If running on static hosting (GitHub Pages) or client-side mode with Gemini API key
   if (isStaticHosting) {
-    return createStyledPlaceholderImage(
-      prompt,
-      prompt,
-      'Điện Ảnh',
-      characterConsistency || 'Nhân vật chính',
-      aspectRatio
-    );
+    // Try generating real AI image via Gemini 3.1 Flash Image if API key is present
+    if (activeKey) {
+      try {
+        const fullPrompt = characterConsistency
+          ? `Consistent character ${characterConsistency}. Scene action: ${prompt}. Cinematic lighting, 8k resolution, masterpiece.`
+          : `${prompt}, cinematic quality, ultra-detailed 8k masterpiece.`;
+
+        const parts: any[] = [];
+        if (referenceImage && referenceImage.data) {
+          const cleanBase64 = referenceImage.data.replace(/^data:image\/\w+;base64,/, '');
+          parts.push({
+            inlineData: {
+              data: cleanBase64,
+              mimeType: referenceImage.mimeType || 'image/jpeg',
+            },
+          });
+          parts.push({
+            text: `Follow the character facial features and outfit from this reference image: ${fullPrompt}`,
+          });
+        } else {
+          parts.push({ text: fullPrompt });
+        }
+
+        const validAspectRatios = ['1:1', '3:4', '4:3', '9:16', '16:9'];
+        const selectedRatio = validAspectRatios.includes(aspectRatio) ? aspectRatio : '16:9';
+
+        const geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${encodeURIComponent(activeKey)}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts }],
+              generationConfig: {
+                imageConfig: {
+                  aspectRatio: selectedRatio,
+                  imageSize: '1K',
+                },
+              },
+            }),
+          }
+        );
+
+        if (geminiRes.ok) {
+          const geminiData = await geminiRes.json();
+          const cand = geminiData.candidates?.[0]?.content?.parts || [];
+          for (const p of cand) {
+            if (p.inlineData?.data) {
+              return `data:${p.inlineData.mimeType || 'image/png'};base64,${p.inlineData.data}`;
+            }
+          }
+        }
+      } catch (geminiImgErr) {
+        console.warn('Direct Gemini Image API attempt failed, trying Banana Image Provider:', geminiImgErr);
+      }
+    }
+
+    // 2. High-speed Banana AI Image Generation (Banana / Pollinations AI Engine)
+    try {
+      const cleanPrompt = encodeURIComponent(
+        `${characterConsistency ? characterConsistency + ', ' : ''}${prompt}, cinematic masterpiece, 8k`
+      );
+      const width = aspectRatio === '9:16' ? 720 : aspectRatio === '1:1' ? 1024 : 1280;
+      const height = aspectRatio === '9:16' ? 1280 : aspectRatio === '1:1' ? 1024 : 720;
+      const seed = Math.floor(Math.random() * 999999);
+      const bananaUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&enhance=true`;
+
+      // Preload test image to verify connectivity
+      const testImg = new Image();
+      testImg.crossOrigin = 'anonymous';
+      await new Promise((res, rej) => {
+        testImg.onload = res;
+        testImg.onerror = rej;
+        testImg.src = bananaUrl;
+      });
+
+      return bananaUrl;
+    } catch (_bananaErr) {
+      // 3. Fallback to styled dynamic canvas artwork
+      return createStyledPlaceholderImage(
+        prompt,
+        prompt,
+        'Điện Ảnh',
+        characterConsistency || 'Nhân vật chính',
+        aspectRatio
+      );
+    }
   }
 
   const payload: any = {
@@ -211,13 +294,22 @@ export async function generateSceneImage(
     });
 
     if (response.status === 404 || !response.ok) {
-      return createStyledPlaceholderImage(
-        prompt,
-        prompt,
-        'Điện Ảnh',
-        characterConsistency || 'Nhân vật chính',
-        aspectRatio
-      );
+      // Try banana AI image generator
+      try {
+        const cleanPrompt = encodeURIComponent(`${characterConsistency ? characterConsistency + ', ' : ''}${prompt}, cinematic, 8k`);
+        const width = aspectRatio === '9:16' ? 720 : aspectRatio === '1:1' ? 1024 : 1280;
+        const height = aspectRatio === '9:16' ? 1280 : aspectRatio === '1:1' ? 1024 : 720;
+        const seed = Math.floor(Math.random() * 999999);
+        return `https://image.pollinations.ai/prompt/${cleanPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true`;
+      } catch (_) {
+        return createStyledPlaceholderImage(
+          prompt,
+          prompt,
+          'Điện Ảnh',
+          characterConsistency || 'Nhân vật chính',
+          aspectRatio
+        );
+      }
     }
 
     const data = await response.json();
