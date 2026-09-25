@@ -1,0 +1,8 @@
+{
+  "name": "Remix NGUYENKYMEDIA - Tạo Video Hàng Loạt Đồng Bộ Nhân Vật",
+  "description": "Hệ thống tự động hóa tạo kịch bản, ảnh và video hàng loạt lên đến 100 cảnh với đồng bộ nhân vật nhất quán, hỗ trợ Veo/Omni, phân tích AI và ghép video hoàn chỉnh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
